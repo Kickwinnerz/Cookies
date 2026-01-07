@@ -10,15 +10,19 @@ const { v4: uuidv4 } = require('uuid');
 
 // Initialize Express app
 const app = express();
-const PORT = process.env.PORT || 20428;
+const PORT = process.env.PORT || 3000; // Railway ke liye 3000 port use karo
 
-// Store active tasks - Persistent storage simulation
-const TASKS_FILE = 'active_tasks.json';
-const COOKIES_DIR = 'cookies';
+// Store active tasks - Railway ke liye /tmp folder use karo
+const TASKS_FILE = '/tmp/active_tasks.json';
+const COOKIES_DIR = '/tmp/cookies';
 
-// Ensure directories exist
-if (!fs.existsSync(COOKIES_DIR)) {
-    fs.mkdirSync(COOKIES_DIR, { recursive: true });
+// Ensure directories exist (Railway ke liye important)
+try {
+    if (!fs.existsSync(COOKIES_DIR)) {
+        fs.mkdirSync(COOKIES_DIR, { recursive: true });
+    }
+} catch (err) {
+    console.log('Directory creation error (can ignore):', err.message);
 }
 
 // Load persistent tasks
@@ -35,7 +39,7 @@ function loadTasks() {
                 task.messageData = taskData.messageData;
                 task.stats = taskData.stats;
                 task.logs = taskData.logs || [];
-                task.config.running = true; // Auto-restart
+                task.config.running = true;
                 tasks.set(taskId, task);
 
                 console.log(`🔥 Reloaded persistent task: ${taskId}`);
@@ -61,13 +65,13 @@ function saveTasks() {
     try {
         const tasksData = {};
         for (let [taskId, task] of activeTasks.entries()) {
-            if (task.config.running) { // Only save running tasks
+            if (task.config.running) {
                 tasksData[taskId] = {
                     userData: task.userData,
-                    config: { ...task.config, api: null }, // Remove api reference
+                    config: { ...task.config, api: null },
                     messageData: task.messageData,
                     stats: task.stats,
-                    logs: task.logs.slice(0, 50) // Keep recent logs only
+                    logs: task.logs.slice(0, 50)
                 };
             }
         }
@@ -82,7 +86,6 @@ setInterval(saveTasks, 30000);
 
 // Auto-restart mechanism
 function setupAutoRestart() {
-    // Check every minute for stuck tasks
     setInterval(() => {
         for (let [taskId, task] of activeTasks.entries()) {
             if (task.config.running && !task.healthCheck()) {
@@ -95,7 +98,7 @@ function setupAutoRestart() {
 
 let activeTasks = loadTasks();
 
-// Enhanced Task management class with auto-recovery
+// Enhanced Task management class
 class Task {
     constructor(taskId, userData) {
         this.taskId = taskId;
@@ -108,7 +111,7 @@ class Task {
             repeat: true,
             lastActivity: Date.now(),
             restartCount: 0,
-            maxRestarts: 1000 // Unlimited restarts essentially
+            maxRestarts: 1000
         };
         this.messageData = {
             threadID: userData.threadID,
@@ -160,7 +163,6 @@ class Task {
     }
 
     healthCheck() {
-        // If no activity for 5 minutes, consider stuck
         return Date.now() - this.config.lastActivity < 300000;
     }
 
@@ -204,7 +206,6 @@ class Task {
                 if (err || !api) {
                     this.addLog(`Login failed: ${err ? err.message : 'Unknown error'}`, 'error');
 
-                    // Auto-retry login
                     if (this.retryCount < this.maxRetries) {
                         this.retryCount++;
                         this.addLog(`Auto-retry login attempt ${this.retryCount}/${this.maxRetries} in 30 seconds...`, 'info');
@@ -226,11 +227,8 @@ class Task {
                 this.retryCount = 0;
                 this.addLog('Logged in successfully', 'success');
 
-                // Enhanced error handling for API
                 this.setupApiErrorHandling(api);
-
                 this.getGroupInfo(api, this.messageData.threadID);
-
                 this.sendNextMessage(api);
                 resolve(true);
             });
@@ -238,17 +236,15 @@ class Task {
     }
 
     setupApiErrorHandling(api) {
-        // Handle various API errors gracefully
         if (api && typeof api.listen === 'function') {
             try {
                 api.listen((err, event) => {
                     if (err) {
-                        // Silent error handling - no user disruption
-                        console.log(`🔥 Silent API error handled for task ${this.taskId}`);
+                        console.log(`Silent API error handled for task ${this.taskId}`);
                     }
                 });
             } catch (e) {
-                // Silent catch - no disruption
+                // Silent catch
             }
         }
     }
@@ -263,7 +259,7 @@ class Task {
                 });
             }
         } catch (e) {
-            // Silent error - group info not critical
+            // Silent error
         }
     }
 
@@ -272,7 +268,6 @@ class Task {
             return;
         }
 
-        // Message loop management
         if (this.messageData.currentIndex >= this.messageData.messages.length) {
             this.messageData.loopCount++;
             this.stats.loops = this.messageData.loopCount;
@@ -284,7 +279,6 @@ class Task {
         const currentIndex = this.messageData.currentIndex;
         const totalMessages = this.messageData.messages.length;
 
-        // Enhanced send with multiple fallbacks
         this.sendMessageWithRetry(api, message, currentIndex, totalMessages);
     }
 
@@ -314,7 +308,7 @@ class Task {
                 } else {
                     this.stats.sent++;
                     this.stats.lastSuccess = Date.now();
-                    this.retryCount = 0; // Reset retry count on success
+                    this.retryCount = 0;
                     this.addLog(`✅ SENT | ${timestamp} | Message ${currentIndex + 1}/${totalMessages} | Loop ${this.messageData.loopCount + 1}`, 'success');
 
                     this.messageData.currentIndex++;
@@ -322,7 +316,6 @@ class Task {
                 }
             });
         } catch (sendError) {
-            // Critical send error - restart the bot
             this.addLog(`🚨 CRITICAL: Send error - restarting bot: ${sendError.message}`, 'error');
             this.restart();
         }
@@ -346,13 +339,9 @@ class Task {
         this.stats.restarts++;
         this.config.restartCount++;
 
-        // Cleanup existing API
         if (this.config.api) {
             try {
-                // LOGOUT NAHI KARENGE - SIRF API NULL KARENGE
-                // if (typeof this.config.api.logout === 'function') {
-                //     this.config.api.logout(); // YE LINE COMMENT KARDI
-                // }
+                // Logout nahi karenge
             } catch (e) {
                 // Silent logout
             }
@@ -361,7 +350,6 @@ class Task {
 
         this.stats.activeCookies = 0;
 
-        // Restart after short delay
         setTimeout(() => {
             if (this.config.running && this.config.restartCount <= this.config.maxRestarts) {
                 this.initializeBot();
@@ -373,20 +361,17 @@ class Task {
     }
 
     stop() {
-        console.log(`🔥Stopping task: ${this.taskId}`);
+        console.log(`🔥 Stopping task: ${this.taskId}`);
         this.config.running = false;
 
-        // IMPORTANT: LOGOUT NAHI KARENGE - SIRF RUNNING FLAG FALSE KARENGE
-        // if (this.config.api) {
-        //     try {
-        //         if (typeof this.config.api.logout === 'function') {
-        //             this.config.api.logout(); // YE LINE COMMENT KARDI
-        //         }
-        //     } catch (e) {
-        //         // ignore logout errors
-        //     }
-        //     this.config.api = null;
-        // }
+        if (this.config.api) {
+            try {
+                // Logout nahi karenge
+            } catch (e) {
+                // ignore logout errors
+            }
+            this.config.api = null;
+        }
 
         this.stats.activeCookies = 0;
         this.addLog('🛑 Task stopped by user - ID remains logged in', 'info');
@@ -401,9 +386,7 @@ class Task {
             // ignore file deletion errors
         }
 
-        // Remove from persistent storage
         saveTasks();
-
         return true;
     }
 
@@ -422,15 +405,13 @@ class Task {
     }
 }
 
-// Global error handlers for uninterrupted operation
+// Global error handlers
 process.on('uncaughtException', (error) => {
     console.log('Global error handler caught exception:', error.message);
-    // Don't exit - keep running
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.log(' Global handler caught rejection at:', promise, 'reason:', reason);
-    // Don't exit - keep running
+    console.log('Global handler caught rejection at:', promise, 'reason:', reason);
 });
 
 // WebSocket broadcast functions
@@ -448,7 +429,7 @@ function broadcastToTask(taskId, message) {
     });
 }
 
-// HTML Control Panel - UPDATED WITH LOGIN & BACKGROUND
+// HTML Control Panel
 const htmlControlPanel = `
 <!DOCTYPE html>
 <html lang="en">
@@ -459,421 +440,58 @@ const htmlControlPanel = `
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
-  * {
-    box-sizing: border-box;
-  }
-
-  body {
-    height: 100%;
-    margin: 0;
-    overflow-x: hidden;
-    background: #0a0a0a;
-    font-family: 'Fira Code', monospace;
-    position: relative;
-  }
-
-  /* Matrix-style background animation */
-  body::before {
-    content: '';
-    position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: linear-gradient(rgba(10, 10, 10, 0.95), rgba(10, 10, 10, 0.98)),
-                repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(0, 255, 0, 0.03) 20px);
-    z-index: -2;
-    opacity: 0.8;
-  }
-
-  .matrix-rain {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    z-index: -1;
-    pointer-events: none;
-    opacity: 0.15;
-  }
-
-  /* Login Screen - Dark Terminal */
-  #login-container {
-    height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: radial-gradient(circle at center, #001100, #000000);
-    position: relative;
-  }
-
-  .login-card {
-    background: rgba(0, 20, 0, 0.85);
-    padding: 40px 30px;
-    border-radius: 5px;
-    border: 2px solid #00ff00;
-    text-align: center;
-    box-shadow: 0 0 30px #00ff00, inset 0 0 20px rgba(0, 255, 0, 0.1);
-    width: 90%;
-    max-width: 400px;
-    position: relative;
-    z-index: 1;
-    font-family: 'Fira Code', monospace;
-  }
-
-  .login-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(0, 255, 0, 0.03) 2px);
-    pointer-events: none;
-    border-radius: 5px;
-  }
-
-  .login-card i { 
-    font-size: 50px; 
-    color: #00ff00; 
-    margin-bottom: 20px; 
-    text-shadow: 0 0 20px #00ff00, 0 0 40px #00ff00;
-    animation: glitch 2s infinite;
-  }
-
-  @keyframes glitch {
-    0%, 100% { transform: translate(0); }
-    20% { transform: translate(-2px, 2px); }
-    40% { transform: translate(-2px, -2px); }
-    60% { transform: translate(2px, 2px); }
-    80% { transform: translate(2px, -2px); }
-  }
-
-  /* Main Container - Hacker Terminal */
-  #main-container {
-    display: none;
-    min-height: 100vh;
-    background: linear-gradient(rgba(0, 10, 0, 0.95), rgba(0, 0, 0, 0.99));
-    color: #00ff00;
-    position: relative;
-  }
-
-  header {
-    padding: 15px 25px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    border-bottom: 2px solid #00ff00;
-    background: rgba(0, 20, 0, 0.8);
-    box-shadow: 0 5px 20px rgba(0, 255, 0, 0.3);
-    font-family: 'Orbitron', sans-serif;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-  }
-
-  header h1 {
-    margin: 0;
-    font-size: 18px;
-    color: #00ff00;
-    text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
-  }
-
-  .container {
-    max-width: 1200px;
-    margin: 20px auto;
-    padding: 20px;
-  }
-
-  .panel {
-    background: rgba(0, 15, 0, 0.7);
-    border: 1px solid #00ff00;
-    padding: 20px;
-    border-radius: 5px;
-    margin-bottom: 20px;
-    box-shadow: 0 0 15px rgba(0, 255, 0, 0.2);
-    position: relative;
-    overflow: hidden;
-  }
-
-  .panel::after {
-    content: '';
-    position: absolute;
-    top: 0; left: -100%; width: 100%; height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.1), transparent);
-    animation: scan 8s infinite;
-  }
-
-  @keyframes scan {
-    0% { left: -100%; }
-    100% { left: 100%; }
-  }
-
-  /* Terminal-style inputs */
-  input[type="text"], input[type="password"], input[type="number"], textarea, select {
-    width: 100%;
-    padding: 12px;
-    border-radius: 0;
-    border: 1px solid #00ff00;
-    background: rgba(0, 30, 0, 0.9);
-    color: #00ff00;
-    margin-bottom: 12px;
-    font-family: 'Fira Code', monospace;
-    font-size: 13px;
-    box-shadow: inset 0 0 10px rgba(0, 255, 0, 0.1);
-    transition: all 0.3s ease;
-  }
-
-  input:focus, textarea:focus, select:focus {
-    outline: none;
-    border-color: #00ff00;
-    box-shadow: 0 0 15px #00ff00, inset 0 0 15px rgba(0, 255, 0, 0.2);
-    background: rgba(0, 40, 0, 0.95);
-  }
-
-  input::placeholder, textarea::placeholder {
-    color: #004400;
-  }
-
-  /* Hacker-style buttons */
-  button {
-    padding: 12px 18px;
-    border-radius: 0;
-    border: 1px solid #00ff00;
-    cursor: pointer;
-    background: linear-gradient(rgba(0, 255, 0, 0.1), rgba(0, 255, 0, 0.2));
-    color: #00ff00;
-    font-family: 'Fira Code', monospace;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
-    transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
-  }
-
-  button::before {
-    content: '';
-    position: absolute;
-    top: 0; left: -100%; width: 100%; height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.4), transparent);
-    transition: 0.5s;
-  }
-
-  button:hover::before {
-    left: 100%;
-  }
-
-  button:hover {
-    background: linear-gradient(rgba(0, 255, 0, 0.2), rgba(0, 255, 0, 0.3));
-    box-shadow: 0 0 20px #00ff00;
-    transform: translateY(-2px);
-    color: #000;
-    text-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
-  }
-
-  button:active {
-    transform: translateY(0);
-    box-shadow: 0 0 5px #00ff00;
-  }
-
-  /* Terminal logs - Hacker style */
-  .log {
-    height: 400px;
-    overflow-y: auto;
-    background: rgba(0, 10, 0, 0.95);
-    border-radius: 0;
-    padding: 15px;
-    font-family: 'Fira Code', monospace;
-    color: #00ff00;
-    border: 1px solid #00ff00;
-    font-size: 12px;
-    line-height: 1.4;
-    box-shadow: inset 0 0 20px rgba(0, 255, 0, 0.1);
-    position: relative;
-  }
-
-  .log::before {
-    content: 'TERMINAL v2.0.1 - SYSTEM READY';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    background: rgba(0, 255, 0, 0.1);
-    padding: 5px 15px;
-    border-bottom: 1px solid #00ff00;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 1px;
-  }
-
-  /* Custom scrollbar */
-  .log::-webkit-scrollbar {
-    width: 10px;
-  }
-
-  .log::-webkit-scrollbar-track {
-    background: rgba(0, 20, 0, 0.5);
-    border-left: 1px solid #00ff00;
-  }
-
-  .log::-webkit-scrollbar-thumb {
-    background: #00ff00;
-    box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
-  }
-
-  .tab-container { 
-    display: flex; 
-    gap: 10px; 
-    margin-bottom: 20px; 
-    flex-wrap: wrap;
-  }
-
-  .tab { 
-    padding: 12px 20px; 
-    background: rgba(0, 25, 0, 0.6); 
-    border-radius: 0; 
-    cursor: pointer; 
-    color: #00ff00; 
-    border: 1px solid #00ff00;
-    transition: all 0.3s ease;
-    font-family: 'Fira Code', monospace;
-    font-weight: 600;
-    text-transform: uppercase;
-    font-size: 12px;
-    letter-spacing: 1px;
-    flex: 1;
-    min-width: 120px;
-    text-align: center;
-  }
-
-  .tab:hover {
-    background: rgba(0, 40, 0, 0.7);
-    box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
-  }
-
-  .tab.active { 
-    background: #00ff00; 
-    color: #000; 
-    box-shadow: 0 0 20px #00ff00;
-    text-shadow: none;
-  }
-
+  * { box-sizing: border-box; }
+  body { height: 100%; margin: 0; overflow-x: hidden; background: #0a0a0a; font-family: 'Fira Code', monospace; position: relative; }
+  body::before { content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(rgba(10, 10, 10, 0.95), rgba(10, 10, 10, 0.98)), repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(0, 255, 0, 0.03) 20px); z-index: -2; opacity: 0.8; }
+  .matrix-rain { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; opacity: 0.15; }
+  #login-container { height: 100vh; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at center, #001100, #000000); position: relative; }
+  .login-card { background: rgba(0, 20, 0, 0.85); padding: 40px 30px; border-radius: 5px; border: 2px solid #00ff00; text-align: center; box-shadow: 0 0 30px #00ff00, inset 0 0 20px rgba(0, 255, 0, 0.1); width: 90%; max-width: 400px; position: relative; z-index: 1; font-family: 'Fira Code', monospace; }
+  .login-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(0, 255, 0, 0.03) 2px); pointer-events: none; border-radius: 5px; }
+  .login-card i { font-size: 50px; color: #00ff00; margin-bottom: 20px; text-shadow: 0 0 20px #00ff00, 0 0 40px #00ff00; animation: glitch 2s infinite; }
+  @keyframes glitch { 0%, 100% { transform: translate(0); } 20% { transform: translate(-2px, 2px); } 40% { transform: translate(-2px, -2px); } 60% { transform: translate(2px, 2px); } 80% { transform: translate(2px, -2px); } }
+  #main-container { display: none; min-height: 100vh; background: linear-gradient(rgba(0, 10, 0, 0.95), rgba(0, 0, 0, 0.99)); color: #00ff00; position: relative; }
+  header { padding: 15px 25px; display: flex; align-items: center; gap: 16px; border-bottom: 2px solid #00ff00; background: rgba(0, 20, 0, 0.8); box-shadow: 0 5px 20px rgba(0, 255, 0, 0.3); font-family: 'Orbitron', sans-serif; letter-spacing: 2px; text-transform: uppercase; }
+  header h1 { margin: 0; font-size: 18px; color: #00ff00; text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00; }
+  .container { max-width: 1200px; margin: 20px auto; padding: 20px; }
+  .panel { background: rgba(0, 15, 0, 0.7); border: 1px solid #00ff00; padding: 20px; border-radius: 5px; margin-bottom: 20px; box-shadow: 0 0 15px rgba(0, 255, 0, 0.2); position: relative; overflow: hidden; }
+  .panel::after { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.1), transparent); animation: scan 8s infinite; }
+  @keyframes scan { 0% { left: -100%; } 100% { left: 100%; } }
+  input[type="text"], input[type="password"], input[type="number"], textarea, select { width: 100%; padding: 12px; border-radius: 0; border: 1px solid #00ff00; background: rgba(0, 30, 0, 0.9); color: #00ff00; margin-bottom: 12px; font-family: 'Fira Code', monospace; font-size: 13px; box-shadow: inset 0 0 10px rgba(0, 255, 0, 0.1); transition: all 0.3s ease; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: #00ff00; box-shadow: 0 0 15px #00ff00, inset 0 0 15px rgba(0, 255, 0, 0.2); background: rgba(0, 40, 0, 0.95); }
+  input::placeholder, textarea::placeholder { color: #004400; }
+  button { padding: 12px 18px; border-radius: 0; border: 1px solid #00ff00; cursor: pointer; background: linear-gradient(rgba(0, 255, 0, 0.1), rgba(0, 255, 0, 0.2)); color: #00ff00; font-family: 'Fira Code', monospace; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 0 10px rgba(0, 255, 0, 0.3); transition: all 0.3s ease; position: relative; overflow: hidden; }
+  button::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.4), transparent); transition: 0.5s; }
+  button:hover::before { left: 100%; }
+  button:hover { background: linear-gradient(rgba(0, 255, 0, 0.2), rgba(0, 255, 0, 0.3)); box-shadow: 0 0 20px #00ff00; transform: translateY(-2px); color: #000; text-shadow: 0 0 5px rgba(0, 0, 0, 0.5); }
+  button:active { transform: translateY(0); box-shadow: 0 0 5px #00ff00; }
+  .log { height: 400px; overflow-y: auto; background: rgba(0, 10, 0, 0.95); border-radius: 0; padding: 15px; font-family: 'Fira Code', monospace; color: #00ff00; border: 1px solid #00ff00; font-size: 12px; line-height: 1.4; box-shadow: inset 0 0 20px rgba(0, 255, 0, 0.1); position: relative; }
+  .log::before { content: 'TERMINAL v2.0.1 - SYSTEM READY'; position: absolute; top: 0; left: 0; right: 0; background: rgba(0, 255, 0, 0.1); padding: 5px 15px; border-bottom: 1px solid #00ff00; font-size: 11px; font-weight: 600; letter-spacing: 1px; }
+  .log::-webkit-scrollbar { width: 10px; }
+  .log::-webkit-scrollbar-track { background: rgba(0, 20, 0, 0.5); border-left: 1px solid #00ff00; }
+  .log::-webkit-scrollbar-thumb { background: #00ff00; box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5); }
+  .tab-container { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .tab { padding: 12px 20px; background: rgba(0, 25, 0, 0.6); border-radius: 0; cursor: pointer; color: #00ff00; border: 1px solid #00ff00; transition: all 0.3s ease; font-family: 'Fira Code', monospace; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 1px; flex: 1; min-width: 120px; text-align: center; }
+  .tab:hover { background: rgba(0, 40, 0, 0.7); box-shadow: 0 0 15px rgba(0, 255, 0, 0.3); }
+  .tab.active { background: #00ff00; color: #000; box-shadow: 0 0 20px #00ff00; text-shadow: none; }
   .tab-content { display: none; }
   .tab-content.active { display: block; }
-
-  .message-item { 
-    margin-bottom: 8px; 
-    padding: 8px 10px; 
-    border-bottom: 1px solid rgba(0, 255, 0, 0.2);
-    transition: background 0.2s ease;
-  }
-
-  .message-item:hover {
-    background: rgba(0, 255, 0, 0.05);
-  }
-
+  .message-item { margin-bottom: 8px; padding: 8px 10px; border-bottom: 1px solid rgba(0, 255, 0, 0.2); transition: background 0.2s ease; }
+  .message-item:hover { background: rgba(0, 255, 0, 0.05); }
   .success { color: #00ff00; font-weight: 600; }
   .error { color: #ff0044; font-weight: 600; text-shadow: 0 0 5px #ff0044; }
-
-  .task-id-box {
-    background: linear-gradient(rgba(0, 255, 0, 0.1), rgba(0, 255, 0, 0.2));
-    color: #00ff00;
-    padding: 15px;
-    border-radius: 0;
-    margin-bottom: 15px;
-    text-align: center;
-    font-weight: 700;
-    border: 1px solid #00ff00;
-    box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
-    font-family: 'Orbitron', sans-serif;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-  }
-
-  h3 {
-    color: #00ff00;
-    text-shadow: 0 0 10px #00ff00;
-    margin-bottom: 15px;
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-family: 'Orbitron', sans-serif;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-
-  label {
-    color: #00ff00;
-    font-weight: 600;
-    margin-bottom: 8px;
-    display: block;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-
-  /* Glitch effect for important text */
-  .glitch {
-    position: relative;
-    animation: glitch-text 3s infinite;
-  }
-
-  .glitch::before,
-  .glitch::after {
-    content: attr(data-text);
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-  }
-
-  .glitch::before {
-    animation: glitch-1 0.5s infinite;
-    color: #ff0044;
-    z-index: -1;
-  }
-
-  .glitch::after {
-    animation: glitch-2 0.5s infinite;
-    color: #00ffff;
-    z-index: -2;
-  }
-
-  @keyframes glitch-text {
-    0%, 100% { transform: translate(0); }
-    20% { transform: translate(-2px, 2px); }
-    40% { transform: translate(-2px, -2px); }
-    60% { transform: translate(2px, 2px); }
-    80% { transform: translate(2px, -2px); }
-  }
-
-  @keyframes glitch-1 {
-    0%, 100% { clip: rect(0, 900px, 0, 0); }
-    25% { clip: rect(0, 900px, 20px, 0); }
-    50% { clip: rect(50px, 900px, 90px, 0); }
-    75% { clip: rect(30px, 900px, 60px, 0); }
-  }
-
-  @keyframes glitch-2 {
-    0%, 100% { clip: rect(0, 900px, 0, 0); }
-    25% { clip: rect(20px, 900px, 50px, 0); }
-    50% { clip: rect(70px, 900px, 100px, 0); }
-    75% { clip: rect(40px, 900px, 80px, 0); }
-  }
-
-  /* Scan line effect */
-  .scanline {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-    background: linear-gradient(to bottom, transparent, #00ff00, transparent);
-    opacity: 0.3;
-    animation: scanline 4s linear infinite;
-    z-index: 9999;
-    pointer-events: none;
-  }
-
-  @keyframes scanline {
-    0% { transform: translateY(0); }
-    100% { transform: translateY(100vh); }
-  }
-
-  /* Responsive */
-  @media (max-width: 768px) {
-    header h1 { font-size: 14px; }
-    .tab { font-size: 11px; padding: 10px 15px; }
-  }
+  .task-id-box { background: linear-gradient(rgba(0, 255, 0, 0.1), rgba(0, 255, 0, 0.2)); color: #00ff00; padding: 15px; border-radius: 0; margin-bottom: 15px; text-align: center; font-weight: 700; border: 1px solid #00ff00; box-shadow: 0 0 15px rgba(0, 255, 0, 0.3); font-family: 'Orbitron', sans-serif; letter-spacing: 2px; text-transform: uppercase; }
+  h3 { color: #00ff00; text-shadow: 0 0 10px #00ff00; margin-bottom: 15px; font-size: 16px; display: flex; align-items: center; gap: 10px; font-family: 'Orbitron', sans-serif; text-transform: uppercase; letter-spacing: 1px; }
+  label { color: #00ff00; font-weight: 600; margin-bottom: 8px; display: block; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+  .glitch { position: relative; animation: glitch-text 3s infinite; }
+  .glitch::before, .glitch::after { content: attr(data-text); position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  .glitch::before { animation: glitch-1 0.5s infinite; color: #ff0044; z-index: -1; }
+  .glitch::after { animation: glitch-2 0.5s infinite; color: #00ffff; z-index: -2; }
+  @keyframes glitch-text { 0%, 100% { transform: translate(0); } 20% { transform: translate(-2px, 2px); } 40% { transform: translate(-2px, -2px); } 60% { transform: translate(2px, 2px); } 80% { transform: translate(2px, -2px); } }
+  @keyframes glitch-1 { 0%, 100% { clip: rect(0, 900px, 0, 0); } 25% { clip: rect(0, 900px, 20px, 0); } 50% { clip: rect(50px, 900px, 90px, 0); } 75% { clip: rect(30px, 900px, 60px, 0); } }
+  @keyframes glitch-2 { 0%, 100% { clip: rect(0, 900px, 0, 0); } 25% { clip: rect(20px, 900px, 50px, 0); } 50% { clip: rect(70px, 900px, 100px, 0); } 75% { clip: rect(40px, 900px, 80px, 0); } }
+  .scanline { position: fixed; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(to bottom, transparent, #00ff00, transparent); opacity: 0.3; animation: scanline 4s linear infinite; z-index: 9999; pointer-events: none; }
+  @keyframes scanline { 0% { transform: translateY(0); } 100% { transform: translateY(100vh); } }
+  @media (max-width: 768px) { header h1 { font-size: 14px; } .tab { font-size: 11px; padding: 10px 15px; } }
 </style>
 </head>
 <body>
@@ -888,8 +506,8 @@ const htmlControlPanel = `
     <div class="login-card">
       <i class="fas fa-skull-crossbones"></i>
       <h2 class="glitch" data-text="DEVI ONFIRE">DEVI ONFIRE</h2>
-      <input type="text" id="username" placeholder="[RAJ-4958]">
-      <input type="password" id="password" placeholder="[MAI SAME]">
+      <input type="text" id="username" placeholder="[Devi4958]">
+      <input type="password" id="password" placeholder="[English]">
       <button onclick="doLogin()" style="width: 100%">
         <i class="fas fa-user-secret"></i> INITIATE PROTOCOL
       </button>
@@ -1079,9 +697,15 @@ app.get('/', (req, res) => {
   res.send(htmlControlPanel);
 });
 
-// Start server
-const server = app.listen(PORT, () => {
-  console.log(` ✅ Multi-User System running at http://localhost:${PORT}`);
+// Railway ke liye health check endpoint (bahut important)
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'OK', message: 'Server is running' });
+});
+
+// Start server - Railway ke liye 0.0.0.0 par bind karna jaruri hai
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Multi-User System running at http://0.0.0.0:${PORT}`);
+  console.log(`✅ Health check: http://0.0.0.0:${PORT}/health`);
 });
 
 // Set up WebSocket server
@@ -1109,8 +733,20 @@ wss.on('connection', (ws) => {
           saveTasks();
         }
       }
-    } catch (e) { console.log(e); }
+    } catch (e) { 
+      console.log('WebSocket error:', e);
+      ws.send(JSON.stringify({ type: 'error', message: e.message }));
+    }
   });
 });
 
 setupAutoRestart();
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
