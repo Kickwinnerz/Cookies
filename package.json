@@ -1,15 +1,23 @@
 {
   "name": "devi-convo-system",
   "version": "1.0.0",
+  "description": "Facebook multi convo system with auto-restart",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
+  "keywords": ["facebook", "automation", "websocket"],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
     "express": "^4.18.2",
-    "ws": "^8.14.2",
-    "axios": "^1.6.0",
     "fca-mafiya": "^1.0.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "ws": "^8.14.2",
+    "axios": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
