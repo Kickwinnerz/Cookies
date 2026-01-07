@@ -750,3 +750,32 @@ process.on('SIGTERM', () => {
     process.exit(0);
   });
 });
+// Start server
+const server = app.listen(PORT, () => {
+  console.log(`  Multi-User System running at http://localhost:${PORT}`);
+});
+// Railway ke liye port binding fix
+const PORT = process.env.PORT || 3000;
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(` Running on port ${PORT}`);
+  console.log(` Health check: http://0.0.0.0:${PORT}/health`);
+});
+// Set up Express server
+app.get('/', (req, res) => {
+  res.send(htmlControlPanel);
+});
+
+// Railway ke liye health check endpoint (bahut important)
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'OK', message: 'Server is running' });
+});
+
+// Start server - Railway ke liye 0.0.0.0 par bind karna jaruri hai
+const PORT = process.env.PORT || 3000;
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(` Running on port ${PORT}`);
+  console.log(` Health check: http://0.0.0.0:${PORT}/health`);
+});
+
+// Set up WebSocket server
+let wss = new WebSocket.Server({ server });
